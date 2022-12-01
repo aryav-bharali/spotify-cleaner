@@ -47,9 +47,7 @@ app.get('/callback', (req, res) => {
       const expires_in = data.body['expires_in']
       // console.log(`Access Token Expires In ${expires_in}s`)
 
-      res.send(
-        `Retrieved Access Token! <a href="/run/${access_token}">Click Here.</a>`,
-      )
+      res.redirect(`/run/${access_token}`)
 
       setInterval(async () => {
         const data = await spotifyAPI.refreshAccessToken()
@@ -64,53 +62,56 @@ app.get('/callback', (req, res) => {
     })
 })
 
-const runProgram = async () => {
-  for (const playlist of playlists) {
-    const originalTracks = (
-      await spotifyAPI.getPlaylistTracks(playlist.explicit, {
-        fields: 'items',
-      })
-    ).body.items
-    const finalTracks: string[] = []
-
-    for (const originalTrack of originalTracks) {
-      const track = originalTrack.track!
-      const { name, artists } = track
-      const artistName = artists[0].name
-
-      if (!track.explicit) finalTracks.push(track.uri)
-      else {
-        const searchQuery = `track:"${name}" artist:${artistName}`
-        const matchedTracks = (
-          await spotifyAPI.searchTracks(searchQuery, { limit: 5 })
-        ).body.tracks!.items
-        const matchedTrack = matchedTracks.find(
-          (matchedTrack) => !matchedTrack.explicit,
-        )
-        if (matchedTrack) {
-          console.log(`Found Replacement For ${name} by ${artistName}`)
-          finalTracks.push(matchedTrack.uri)
-        } else {
-          console.log(`No Replacement For    ${name} by ${artistName}`)
-          finalTracks.push(track.uri)
-        }
-      }
-    }
-
-    await spotifyAPI.replaceTracksInPlaylist(playlist.clean, finalTracks)
-  }
-}
-
-app.get('/run/:accessToken', async (req, res) => {
+app.get('/run/:accessToken', (req, res) => {
   const { accessToken } = req.params
 
   spotifyAPI.setAccessToken(accessToken)
-  await runProgram().catch((err) => {
-    console.error(err)
-    res.end(`Error: ${err}`)
-  })
+  ;(async () => {
+    let output = ''
+    for (const playlist of playlists) {
+      const originalTracks = (
+        await spotifyAPI.getPlaylistTracks(playlist.explicit, {
+          fields: 'items',
+        })
+      ).body.items
+      const finalTracks: string[] = []
 
-  res.send('Success!')
+      for (const originalTrack of originalTracks) {
+        const track = originalTrack.track!
+        const { name, artists } = track
+        const artistName = artists[0].name
+
+        if (!track.explicit)
+          // If track is clean, no more work
+          finalTracks.push(track.uri)
+        else {
+          const searchQuery = `track:"${name}" artist:${artistName}`
+          const matchedTracks = (
+            await spotifyAPI.searchTracks(searchQuery, { limit: 5 })
+          ).body.tracks!.items
+          const matchedTrack = matchedTracks.find(
+            (matchedTrack) => !matchedTrack.explicit,
+          )
+
+          if (matchedTrack) {
+            output += `Found Replacement For ${name} by ${artistName}<br />`
+            finalTracks.push(matchedTrack.uri)
+          } else {
+            output += `No Replacement For    ${name} by ${artistName}<br />`
+            finalTracks.push(track.uri)
+          }
+        }
+      }
+
+      output += '<hr />'
+      await spotifyAPI.replaceTracksInPlaylist(playlist.clean, finalTracks)
+    }
+
+    res.send(`Success!<hr />${output}`)
+  })().catch((error) => {
+    console.error('Error: ', error)
+    res.send(`Error: ${error}`)
+  })
 })
 
 app.listen(8888, () => console.log('Go To http://localhost:8888/login'))
