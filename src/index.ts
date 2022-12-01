@@ -3,10 +3,12 @@ import express from 'express'
 import SpotifyWebApi from 'spotify-web-api-node'
 dotenv.config()
 
-const playlistID = {
-  explicit: '0IgKQYNz8bXHWda74ZtJvU',
-  clean: '3vPcyeQqqeJcDZ5rvQB2HG',
-}
+const playlists = [
+  {
+    explicit: '0IgKQYNz8bXHWda74ZtJvU',
+    clean: '3vPcyeQqqeJcDZ5rvQB2HG',
+  },
+]
 
 const scopes = ['playlist-modify-private', 'playlist-modify-public']
 
@@ -63,38 +65,40 @@ app.get('/callback', (req, res) => {
 })
 
 const runProgram = async () => {
-  const originalTracks = (
-    await spotifyAPI.getPlaylistTracks(playlistID.explicit, {
-      fields: 'items',
-    })
-  ).body.items
-  const finalTracks: string[] = []
+  for (const playlist of playlists) {
+    const originalTracks = (
+      await spotifyAPI.getPlaylistTracks(playlist.explicit, {
+        fields: 'items',
+      })
+    ).body.items
+    const finalTracks: string[] = []
 
-  for (const originalTrack of originalTracks) {
-    const track = originalTrack.track!
-    const { name, artists } = track
-    const artistName = artists[0].name
+    for (const originalTrack of originalTracks) {
+      const track = originalTrack.track!
+      const { name, artists } = track
+      const artistName = artists[0].name
 
-    if (!track.explicit) finalTracks.push(track.uri)
-    else {
-      const searchQuery = `track:"${name}" artist:${artistName}`
-      const matchedTracks = (
-        await spotifyAPI.searchTracks(searchQuery, { limit: 5 })
-      ).body.tracks!.items
-      const matchedTrack = matchedTracks.find(
-        (matchedTrack) => !matchedTrack.explicit,
-      )
-      if (matchedTrack) {
-        console.log(`Found Replacement For ${name} by ${artistName}`)
-        finalTracks.push(matchedTrack.uri)
-      } else {
-        console.log(`No Replacement For    ${name} by ${artistName}`)
-        finalTracks.push(track.uri)
+      if (!track.explicit) finalTracks.push(track.uri)
+      else {
+        const searchQuery = `track:"${name}" artist:${artistName}`
+        const matchedTracks = (
+          await spotifyAPI.searchTracks(searchQuery, { limit: 5 })
+        ).body.tracks!.items
+        const matchedTrack = matchedTracks.find(
+          (matchedTrack) => !matchedTrack.explicit,
+        )
+        if (matchedTrack) {
+          console.log(`Found Replacement For ${name} by ${artistName}`)
+          finalTracks.push(matchedTrack.uri)
+        } else {
+          console.log(`No Replacement For    ${name} by ${artistName}`)
+          finalTracks.push(track.uri)
+        }
       }
     }
-  }
 
-  await spotifyAPI.replaceTracksInPlaylist(playlistID.clean, finalTracks)
+    await spotifyAPI.replaceTracksInPlaylist(playlist.clean, finalTracks)
+  }
 }
 
 app.get('/run/:accessToken', async (req, res) => {
